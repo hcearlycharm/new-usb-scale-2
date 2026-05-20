@@ -1,0 +1,724 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Scale Data</title>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.2.1/jquery.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 30px;
+        }
+
+        h1 {
+            margin-bottom: 5px;
+        }
+
+        .main-layout {
+            display: flex;
+            gap: 40px;
+            align-items: flex-start;
+        }
+
+        .left-panel {
+            flex: 0 0 480px;
+        }
+
+        .right-panel {
+            flex: 1;
+            min-width: 400px;
+        }
+
+        .live-reading {
+            margin-bottom: 15px;
+        }
+
+        .live-reading label {
+            display: inline-block;
+            width: 60px;
+            font-weight: bold;
+        }
+
+        .live-reading input {
+            width: 200px;
+            padding: 4px;
+            font-size: 14px;
+        }
+
+        #status {
+            color: orange;
+            margin-top: 8px;
+            font-size: 13px;
+        }
+
+        .info-bar {
+            margin-top: 12px;
+            margin-bottom: 12px;
+            font-size: 13px;
+            color: #333;
+            display: flex;
+            gap: 20px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .info-bar span {
+            background: #f0f0f0;
+            border-radius: 4px;
+            padding: 5px 12px;
+        }
+
+        #recordingStatus {
+            font-weight: bold;
+        }
+
+        .recording-on  { color: #27ae60; }
+        .recording-off { color: #e74c3c; }
+
+        .button-row {
+            margin-top: 12px;
+            margin-bottom: 20px;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        button {
+            padding: 8px 18px;
+            font-size: 14px;
+            cursor: pointer;
+            border-radius: 4px;
+            border: none;
+        }
+
+        #toggleBtn {
+            background-color: #27ae60;
+            color: white;
+        }
+
+        #toggleBtn.stopping {
+            background-color: #e74c3c;
+        }
+
+        #saveNowBtn {
+            background-color: #2980b9;
+            color: white;
+        }
+
+        #saveNowBtn:disabled,
+        #clearBtn:disabled {
+            background-color: #aaa;
+            cursor: default;
+        }
+
+        #clearBtn {
+            background-color: #e74c3c;
+            color: white;
+        }
+
+        h2 {
+            margin-top: 10px;
+            margin-bottom: 6px;
+        }
+
+        #recordCount {
+            font-size: 13px;
+            color: #555;
+            margin-bottom: 8px;
+        }
+
+        .table-wrapper {
+            max-height: 350px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            width: 100%;
+        }
+
+        table {
+            border-collapse: collapse;
+            width: 100%;
+        }
+
+        thead th {
+            background-color: #333;
+            color: white;
+            padding: 8px 14px;
+            text-align: left;
+            position: sticky;
+            top: 0;
+        }
+
+        td {
+            padding: 5px 14px;
+            border-bottom: 1px solid #eee;
+            font-size: 13px;
+        }
+
+        tr:nth-child(even)  { background-color: #f9f9f9; }
+        tr:hover            { background-color: #eaf4ff; }
+
+        #csvLog {
+            margin-top: 25px;
+        }
+
+        #csvLog h2 {
+            margin-bottom: 6px;
+        }
+
+        #csvLogList {
+            list-style: none;
+            padding: 0;
+            font-size: 13px;
+        }
+
+        #csvLogList li {
+            padding: 4px 0;
+            color: #27ae60;
+        }
+
+        #csvLogList li span {
+            color: #555;
+            margin-left: 8px;
+        }
+
+        #noCSV {
+            font-size: 13px;
+            color: #999;
+            font-style: italic;
+        }
+
+        /* Graph panel */
+        .right-panel h2 {
+            margin-bottom: 10px;
+        }
+
+        .chart-container {
+            position: relative;
+            width: 100%;
+            height: 420px;
+            background: #fafafa;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            padding: 16px;
+            box-sizing: border-box;
+        }
+
+        #chartPlaceholder {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: #aaa;
+            font-size: 15px;
+            font-style: italic;
+        }
+
+        #weightChart {
+            display: none;
+        }
+
+        .chart-stats {
+            margin-top: 12px;
+            display: flex;
+            gap: 16px;
+            flex-wrap: wrap;
+            font-size: 13px;
+        }
+
+        .chart-stats .stat {
+            background: #f0f0f0;
+            border-radius: 4px;
+            padding: 6px 14px;
+        }
+
+        .chart-stats .stat strong {
+            display: block;
+            font-size: 11px;
+            color: #777;
+            margin-bottom: 2px;
+            text-transform: uppercase;
+        }
+    </style>
+</head>
+<body>
+
+<h1>Scale Data — Auto Logger</h1>
+
+<div class="main-layout">
+
+    <!-- ── Left panel ── -->
+    <div class="left-panel">
+
+        <div class="live-reading">
+            <label>Pounds:</label>
+            <input id="lbs" value="Connecting..." readonly><br><br>
+            <label>Ounces:</label>
+            <input id="ozs" value="Connecting..." readonly>
+        </div>
+
+        <div id="status">Connecting to WebSocket...</div>
+
+        <div class="info-bar">
+            <span>Recording: <span id="recordingStatus" class="recording-off">Stopped</span></span>
+            <span>Records: <span id="sessionCount">0</span></span>
+        </div>
+
+        <div class="button-row">
+            <button id="toggleBtn">Start Recording</button>
+            <button id="saveNowBtn" disabled>Save CSV Now</button>
+            <button id="clearBtn"   disabled>Clear Table</button>
+        </div>
+
+        <h2>Recorded Weights</h2>
+        <div id="recordCount">No weights recorded yet.</div>
+        <div class="table-wrapper" id="tableWrapper" style="display:none;">
+            <table id="weightTable">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Timestamp</th>
+                        <th>Pounds</th>
+                        <th>Ounces</th>
+                        <th>Total Oz</th>
+                    </tr>
+                </thead>
+                <tbody id="weightTableBody"></tbody>
+            </table>
+        </div>
+
+        <div id="csvLog">
+            <h2>Saved CSV Files</h2>
+            <div id="noCSV">No CSV files saved yet.</div>
+            <ul id="csvLogList"></ul>
+        </div>
+
+    </div>
+
+    <!-- ── Right panel (graph) ── -->
+    <div class="right-panel">
+        <h2>Weight Over Time</h2>
+        <div class="chart-container">
+            <div id="chartPlaceholder">Press Start Recording to begin graphing</div>
+            <canvas id="weightChart"></canvas>
+        </div>
+
+        <div class="chart-stats">
+            <div class="stat">
+                <strong>Current</strong>
+                <span id="statCurrent">--</span>
+            </div>
+            <div class="stat">
+                <strong>Min</strong>
+                <span id="statMin">--</span>
+            </div>
+            <div class="stat">
+                <strong>Max</strong>
+                <span id="statMax">--</span>
+            </div>
+            <div class="stat">
+                <strong>Average</strong>
+                <span id="statAvg">--</span>
+            </div>
+            <div class="stat">
+                <strong>Elapsed</strong>
+                <span id="statElapsed">--</span>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<script type="text/javascript">
+    // ── Configuration ─────────────────────────────────────────────────────────
+    var RECORD_INTERVAL_MS = 500;
+    var MAX_CHART_POINTS   = 300; // Max points shown on graph at once
+
+    // ── State ─────────────────────────────────────────────────────────────────
+    var myWebsocket;
+    var currentLbs       = null;
+    var currentOzs       = null;
+    var records          = [];
+    var rowCounter       = 1;
+    var isRecording      = false;
+    var recordTimer      = null;
+    var tableUpdateTimer = null;
+    var pendingRows      = [];
+    var csvFileCount     = 0;
+    var recordingStart   = null;
+
+    // Chart state
+    var chart            = null;
+    var chartLabels      = [];  // elapsed time strings (x axis)
+    var chartData        = [];  // total ounces (y axis)
+    var allWeights       = [];  // for min/max/avg stats
+
+    // ── WebSocket ─────────────────────────────────────────────────────────────
+    setSockets();
+
+    function setSockets() {
+        myWebsocket = new WebSocket('ws://localhost:8001/');
+
+        myWebsocket.onopen = function () {
+            document.getElementById('status').style.color = 'green';
+            document.getElementById('status').innerText = 'WebSocket connected!';
+        };
+
+        myWebsocket.onmessage = function (evt) {
+            var data = JSON.parse(evt.data);
+            currentLbs = data['lbs'];
+            currentOzs = data['ozs'];
+            document.getElementById('lbs').value = currentLbs;
+            document.getElementById('ozs').value = currentOzs;
+            document.getElementById('status').innerText = 'Receiving data...';
+        };
+
+        myWebsocket.onerror = function () {
+            document.getElementById('status').style.color = 'red';
+            document.getElementById('status').innerText = 'WebSocket error - check console (F12)';
+        };
+
+        myWebsocket.onclose = function (evt) {
+            document.getElementById('status').style.color = 'red';
+            document.getElementById('status').innerText = 'WebSocket closed. Code: ' + evt.code;
+        };
+    }
+
+    // ── Chart setup ───────────────────────────────────────────────────────────
+    function initChart() {
+        var ctx = document.getElementById('weightChart').getContext('2d');
+        chart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: chartLabels,
+                datasets: [{
+                    label: 'Weight (Total Oz)',
+                    data: chartData,
+                    borderColor: '#e74c3c',
+                    backgroundColor: 'rgba(231, 76, 60, 0.08)',
+                    borderWidth: 2,
+                    pointRadius: 0,
+                    pointHoverRadius: 4,
+                    tension: 0.3,
+                    fill: true,
+                    yAxisID: 'yWeight'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: false,
+                interaction: {
+                    mode: 'index',
+                    intersect: false
+                },
+                plugins: {
+                    legend: {
+                        display: true,
+                        labels: {
+                            color: '#333',
+                            font: { size: 12 }
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            title: function (items) {
+                                return 'Elapsed: ' + items[0].label;
+                            },
+                            label: function (item) {
+                                return 'Weight: ' + item.parsed.y.toFixed(2) + ' oz';
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        title: {
+                            display: true,
+                            text: 'Elapsed Time',
+                            color: '#2980b9',
+                            font: { size: 13, weight: 'bold' }
+                        },
+                        ticks: {
+                            color: '#2980b9',
+                            maxTicksLimit: 10,
+                            maxRotation: 0
+                        },
+                        grid: {
+                            color: 'rgba(41, 128, 185, 0.1)'
+                        }
+                    },
+                    yWeight: {
+                        position: 'left',
+                        title: {
+                            display: true,
+                            text: 'Weight (oz)',
+                            color: '#e74c3c',
+                            font: { size: 13, weight: 'bold' }
+                        },
+                        ticks: {
+                            color: '#e74c3c',
+                            callback: function (val) {
+                                return val.toFixed(2) + ' oz';
+                            }
+                        },
+                        grid: {
+                            color: 'rgba(231, 76, 60, 0.1)'
+                        }
+                    }
+                }
+            }
+        });
+
+        document.getElementById('chartPlaceholder').style.display = 'none';
+        document.getElementById('weightChart').style.display = 'block';
+    }
+
+    function addChartPoint(elapsedStr, totalOzs) {
+        chartLabels.push(elapsedStr);
+        chartData.push(totalOzs);
+        allWeights.push(totalOzs);
+
+        // Keep only the last MAX_CHART_POINTS on the graph
+        if (chartLabels.length > MAX_CHART_POINTS) {
+            chartLabels.shift();
+            chartData.shift();
+        }
+
+        chart.update('none'); // 'none' skips animation for performance
+        updateStats(totalOzs);
+    }
+
+    function updateStats(currentOz) {
+        var min = Math.min.apply(null, allWeights);
+        var max = Math.max.apply(null, allWeights);
+        var avg = allWeights.reduce(function (a, b) { return a + b; }, 0) / allWeights.length;
+        var elapsed = getElapsedString(Date.now() - recordingStart);
+
+        document.getElementById('statCurrent').innerText = currentOz.toFixed(2) + ' oz';
+        document.getElementById('statMin').innerText     = min.toFixed(2) + ' oz';
+        document.getElementById('statMax').innerText     = max.toFixed(2) + ' oz';
+        document.getElementById('statAvg').innerText     = avg.toFixed(2) + ' oz';
+        document.getElementById('statElapsed').innerText = elapsed;
+    }
+
+    // ── Recording controls ────────────────────────────────────────────────────
+    document.getElementById('toggleBtn').addEventListener('click', function () {
+        if (isRecording) {
+            stopRecording();
+        } else {
+            startRecording();
+        }
+    });
+
+    function startRecording() {
+        isRecording      = true;
+        recordingStart   = Date.now();
+        chartLabels      = [];
+        chartData        = [];
+        allWeights       = [];
+
+        document.getElementById('toggleBtn').innerText = 'Stop Recording';
+        document.getElementById('toggleBtn').classList.add('stopping');
+        document.getElementById('recordingStatus').innerText = 'Active';
+        document.getElementById('recordingStatus').className = 'recording-on';
+        document.getElementById('saveNowBtn').disabled = false;
+        document.getElementById('clearBtn').disabled   = false;
+
+        // Init chart on first start
+        if (!chart) {
+            initChart();
+        } else {
+            chart.data.labels  = chartLabels;
+            chart.data.datasets[0].data = chartData;
+            chart.update('none');
+        }
+
+        // Record every 500ms
+        recordTimer = setInterval(function () {
+            recordCurrentWeight();
+        }, RECORD_INTERVAL_MS);
+
+        // Refresh visible table every 500ms
+        tableUpdateTimer = setInterval(function () {
+            refreshTable();
+        }, 500);
+    }
+
+    function stopRecording() {
+        isRecording = false;
+        clearInterval(recordTimer);
+        clearInterval(tableUpdateTimer);
+
+        document.getElementById('toggleBtn').innerText = 'Start Recording';
+        document.getElementById('toggleBtn').classList.remove('stopping');
+        document.getElementById('recordingStatus').innerText = 'Stopped';
+        document.getElementById('recordingStatus').className = 'recording-off';
+    }
+
+    // ── Record one weight reading ─────────────────────────────────────────────
+    function recordCurrentWeight() {
+        if (currentLbs === null || currentLbs === 'No scale connected') return;
+
+        var now        = new Date();
+        var timestamp  = now.getFullYear() + '-' +
+            String(now.getMonth() + 1).padStart(2, '0') + '-' +
+            String(now.getDate()).padStart(2, '0') + ' ' +
+            String(now.getHours()).padStart(2, '0') + ':' +
+            String(now.getMinutes()).padStart(2, '0') + ':' +
+            String(now.getSeconds()).padStart(2, '0');
+        var elapsed    = Date.now() - recordingStart;
+        var elapsedStr = getElapsedString(elapsed);
+        var totalOzs   = parseFloat((parseFloat(currentLbs) * 16 + parseFloat(currentOzs)).toFixed(2));
+
+        var record = {
+            id:        rowCounter++,
+            timestamp: timestamp,
+            elapsed:   elapsedStr,
+            lbs:       currentLbs,
+            ozs:       currentOzs,
+            totalOzs:  totalOzs
+        };
+
+        records.push(record);
+        pendingRows.push(record);
+        updateRecordCount();
+
+        // Update chart
+        addChartPoint(elapsedStr, totalOzs);
+    }
+
+    // ── Table rendering ───────────────────────────────────────────────────────
+    function refreshTable() {
+        if (pendingRows.length === 0) return;
+        var tbody = document.getElementById('weightTableBody');
+
+        pendingRows.forEach(function (record) {
+            var row = document.createElement('tr');
+            row.innerHTML =
+                '<td>' + record.id        + '</td>' +
+                '<td>' + record.timestamp + '</td>' +
+                '<td>' + record.lbs       + '</td>' +
+                '<td>' + record.ozs       + '</td>' +
+                '<td>' + record.totalOzs  + '</td>';
+            tbody.appendChild(row);
+        });
+        pendingRows = [];
+
+        // Keep only last 100 rows visible
+        while (tbody.rows.length > 100) {
+            tbody.deleteRow(0);
+        }
+
+        document.getElementById('tableWrapper').style.display = 'block';
+        var wrapper = document.getElementById('tableWrapper');
+        wrapper.scrollTop = wrapper.scrollHeight;
+    }
+
+    function updateRecordCount() {
+        var count = records.length;
+        document.getElementById('recordCount').innerText =
+            count === 0 ? 'No weights recorded yet.' :
+            count === 1 ? '1 weight recorded.' :
+            count + ' weights recorded.';
+        document.getElementById('sessionCount').innerText = count;
+    }
+
+    // ── CSV save ──────────────────────────────────────────────────────────────
+    document.getElementById('saveNowBtn').addEventListener('click', function () {
+        if (records.length === 0) {
+            alert('No records to save yet.');
+            return;
+        }
+        saveCSV();
+    });
+
+    function saveCSV() {
+        if (records.length === 0) return;
+
+        var csvLines = ['#,Timestamp,Elapsed,Pounds,Ounces,Total Ounces'];
+        records.forEach(function (r) {
+            csvLines.push(
+                r.id + ',' +
+                '"' + r.timestamp + '",' +
+                '"' + r.elapsed   + '",' +
+                r.lbs + ',' +
+                r.ozs + ',' +
+                r.totalOzs
+            );
+        });
+
+        var blob     = new Blob([csvLines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+        var url      = URL.createObjectURL(blob);
+        var filename = 'scale_weights_' + getFilenameTimestamp() + '.csv';
+        var link     = document.createElement('a');
+        link.setAttribute('href', url);
+        link.setAttribute('download', filename);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        logCSVSave(filename, records.length);
+    }
+
+    function logCSVSave(filename, count) {
+        document.getElementById('noCSV').style.display = 'none';
+        var list = document.getElementById('csvLogList');
+        var item = document.createElement('li');
+        var now  = new Date();
+        item.innerHTML =
+            '&#10003; <strong>' + filename + '</strong>' +
+            '<span>' + count + ' records &mdash; saved at ' + now.toLocaleTimeString() + '</span>';
+        list.appendChild(item);
+    }
+
+    // ── Clear table ───────────────────────────────────────────────────────────
+    document.getElementById('clearBtn').addEventListener('click', function () {
+        if (records.length === 0) return;
+        if (!confirm('Clear all current records? Saved CSV files are not affected.')) return;
+        records     = [];
+        pendingRows = [];
+        rowCounter  = 1;
+        allWeights  = [];
+        chartLabels = [];
+        chartData   = [];
+        document.getElementById('weightTableBody').innerHTML = '';
+        document.getElementById('tableWrapper').style.display = 'none';
+        updateRecordCount();
+        if (chart) {
+            chart.data.labels = chartLabels;
+            chart.data.datasets[0].data = chartData;
+            chart.update('none');
+        }
+        document.getElementById('statCurrent').innerText = '--';
+        document.getElementById('statMin').innerText     = '--';
+        document.getElementById('statMax').innerText     = '--';
+        document.getElementById('statAvg').innerText     = '--';
+        document.getElementById('statElapsed').innerText = '--';
+    });
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+    function getElapsedString(ms) {
+        var totalSec = Math.floor(ms / 1000);
+        var hrs  = Math.floor(totalSec / 3600);
+        var mins = Math.floor((totalSec % 3600) / 60);
+        var secs = totalSec % 60;
+        if (hrs > 0) {
+            return hrs + 'h ' + String(mins).padStart(2,'0') + 'm ' + String(secs).padStart(2,'0') + 's';
+        }
+        return String(mins).padStart(2,'0') + 'm ' + String(secs).padStart(2,'0') + 's';
+    }
+
+    function getFilenameTimestamp() {
+        var now = new Date();
+        return now.getFullYear() + '-' +
+            String(now.getMonth() + 1).padStart(2, '0') + '-' +
+            String(now.getDate()).padStart(2, '0') + '_' +
+            String(now.getHours()).padStart(2, '0') + '-' +
+            String(now.getMinutes()).padStart(2, '0') + '-' +
+            String(now.getSeconds()).padStart(2, '0');
+    }
+</script>
+
+</body>
+</html>
